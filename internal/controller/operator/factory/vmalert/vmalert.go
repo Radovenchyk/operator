@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"slices"
 
 	vmv1beta1 "github.com/VictoriaMetrics/operator/api/operator/v1beta1"
 	"github.com/VictoriaMetrics/operator/internal/config"
@@ -142,23 +143,10 @@ func CreateOrUpdateVMAlert(ctx context.Context, cr *vmv1beta1.VMAlert, rclient c
 	// copy to avoid side effects.
 	cr = cr.DeepCopy()
 	var additionalNotifiers []vmv1beta1.VMAlertNotifierSpec
-
-	if cr.Spec.Notifier != nil {
-		cr.Spec.Notifiers = append(cr.Spec.Notifiers, *cr.Spec.Notifier)
-	}
-	// trim notifiers with non-empty notifier Selector
-	var cnt int
-	for i := range cr.Spec.Notifiers {
-		n := cr.Spec.Notifiers[i]
-		// fast path
-		if n.Selector == nil {
-			cr.Spec.Notifiers[cnt] = n
-			cnt++
-			continue
-		}
+	for _, selector := range cr.GetNotifierSelectors() {
 		// discover alertmanagers
 		var ams vmv1beta1.VMAlertmanagerList
-		amListOpts, err := n.Selector.AsListOptions()
+		amListOpts, err := selector.AsListOptions()
 		if err != nil {
 			return fmt.Errorf("cannot convert notifier selector as ListOptions: %w", err)
 		}
@@ -169,14 +157,23 @@ func CreateOrUpdateVMAlert(ctx context.Context, cr *vmv1beta1.VMAlert, rclient c
 		}
 
 		for _, item := range ams.Items {
-			if !item.DeletionTimestamp.IsZero() || (n.Selector.Namespace != nil && !n.Selector.Namespace.IsMatch(&item)) {
+			if !item.DeletionTimestamp.IsZero() || (selector.Namespace != nil && !selector.Namespace.IsMatch(&item)) {
 				continue
 			}
 			dsc := item.AsNotifiers()
 			additionalNotifiers = append(additionalNotifiers, dsc...)
 		}
 	}
-	cr.Spec.Notifiers = cr.Spec.Notifiers[:cnt]
+
+	// remove notifiers with a selector as they have been consumed and the
+	// results added to additionalNotifiers.
+	cr.Spec.Notifiers = slices.DeleteFunc(cr.Spec.Notifiers, func(n vmv1beta1.VMAlertNotifierSpec) bool {
+		return n.Selector != nil
+	})
+
+	if cr.Spec.Notifier != nil && cr.Spec.Notifier.Selector == nil {
+		cr.Spec.Notifiers = append(cr.Spec.Notifiers, *cr.Spec.Notifier)
+	}
 
 	if len(additionalNotifiers) > 0 {
 		sort.Slice(additionalNotifiers, func(i, j int) bool {

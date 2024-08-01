@@ -34,24 +34,26 @@ func Test_loadVMAlertRemoteSecrets(t *testing.T) {
 			name: "test ok, secret found",
 			args: args{
 				cr: &vmv1beta1.VMAlert{
-					Spec: vmv1beta1.VMAlertSpec{RemoteWrite: &vmv1beta1.VMAlertRemoteWriteSpec{
-						HTTPAuth: vmv1beta1.HTTPAuth{
-							BasicAuth: &vmv1beta1.BasicAuth{
-								Password: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "secret-1",
+					Spec: vmv1beta1.VMAlertSpec{
+						RemoteWrite: &vmv1beta1.VMAlertRemoteWriteSpec{
+							HTTPAuth: vmv1beta1.HTTPAuth{
+								BasicAuth: &vmv1beta1.BasicAuth{
+									Password: corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "secret-1",
+										},
+										Key: "password",
 									},
-									Key: "password",
-								},
-								Username: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "secret-1",
+									Username: corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "secret-1",
+										},
+										Key: "username",
 									},
-									Key: "username",
 								},
 							},
 						},
-					}},
+					},
 				},
 				SecretsInNS: &corev1.SecretList{
 					Items: []corev1.Secret{
@@ -557,11 +559,182 @@ func TestCreateOrUpdateVMAlert(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "with selector",
+			args: args{
+				cr: &vmv1beta1.VMAlert{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "some-namespace",
+					},
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								Selector: &vmv1beta1.DiscoverySelector{
+									Labels: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"some-label-key": "some-label-value"},
+									},
+								},
+							},
+						},
+					},
+				},
+				c: config.MustGetBaseConfig(),
+			},
+			predefinedObjects: []runtime.Object{
+				&vmv1beta1.VMAlertmanager{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-other-name",
+						Namespace: "some-other-namespace",
+						Labels:    map[string]string{"some-label-key": "some-label-value"},
+					},
+				},
+			},
+		},
+		{
+			name: "with selector in namespace",
+			args: args{
+				cr: &vmv1beta1.VMAlert{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "some-namespace",
+					},
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								Selector: &vmv1beta1.DiscoverySelector{
+									Namespace: &vmv1beta1.NamespaceSelector{
+										MatchNames: []string{"some-other-namespace"},
+									},
+									Labels: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"some-label-key": "some-label-value"},
+									},
+								},
+							},
+						},
+					},
+				},
+				c: config.MustGetBaseConfig(),
+			},
+			predefinedObjects: []runtime.Object{
+				&vmv1beta1.VMAlertmanager{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-other-name",
+						Namespace: "some-other-namespace",
+						Labels:    map[string]string{"some-label-key": "some-label-value"},
+					},
+				},
+			},
+		},
+		{
+			name: "with selector in any namespace",
+			args: args{
+				cr: &vmv1beta1.VMAlert{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "some-namespace",
+					},
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								Selector: &vmv1beta1.DiscoverySelector{
+									Namespace: &vmv1beta1.NamespaceSelector{
+										Any: true,
+									},
+									Labels: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"some-label-key": "some-label-value"},
+									},
+								},
+							},
+						},
+					},
+				},
+				c: config.MustGetBaseConfig(),
+			},
+			predefinedObjects: []runtime.Object{
+				&vmv1beta1.VMAlertmanager{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-other-name",
+						Namespace: "some-other-namespace",
+						Labels:    map[string]string{"some-label-key": "some-label-value"},
+					},
+				},
+			},
+		},
+		{
+			name: "with invalid selector",
+			args: args{
+				cr: &vmv1beta1.VMAlert{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "some-namespace",
+					},
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								Selector: &vmv1beta1.DiscoverySelector{
+									Labels: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"some-label-key": "some-label-value"},
+									},
+								},
+							},
+						},
+					},
+				},
+				c: config.MustGetBaseConfig(),
+			},
+			predefinedObjects: []runtime.Object{
+				&vmv1beta1.VMAlertmanager{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-other-name",
+						Namespace: "some-other-namespace",
+						Labels:    map[string]string{"some-label-key": "some-invalid-label-value"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "with selector in invalid namespace",
+			args: args{
+				cr: &vmv1beta1.VMAlert{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-name",
+						Namespace: "some-namespace",
+					},
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								Selector: &vmv1beta1.DiscoverySelector{
+									Namespace: &vmv1beta1.NamespaceSelector{
+										MatchNames: []string{"some-namespace"},
+									},
+									Labels: &metav1.LabelSelector{
+										MatchLabels: map[string]string{"some-label-key": "some-label-value"},
+									},
+								},
+							},
+						},
+					},
+				},
+				c: config.MustGetBaseConfig(),
+			},
+			predefinedObjects: []runtime.Object{
+				&vmv1beta1.VMAlertmanager{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "some-other-name",
+						Namespace: "some-other-namespace",
+						Labels:    map[string]string{"some-label-key": "some-label-value"},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fclient := k8stools.GetTestClientWithObjects(tt.predefinedObjects)
-			err := CreateOrUpdateVMAlert(context.TODO(), tt.args.cr, fclient, tt.args.c, tt.args.cmNames)
+			err := CreateOrUpdateVMAlert(context.Background(), tt.args.cr, fclient, tt.args.c, tt.args.cmNames)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateOrUpdateVMAlert() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -573,7 +746,7 @@ func TestCreateOrUpdateVMAlert(t *testing.T) {
 					t.Fatalf("cannot find generated deployment: %v, err: %v", tt.args.cr.PrefixedName(), err)
 				}
 				if err := tt.validator(&generatedDeploment); err != nil {
-					t.Fatalf("unexpetected error at deployment validation: %v", err)
+					t.Fatalf("unexpected error during deployment validation: %v", err)
 				}
 			}
 		})
@@ -594,25 +767,27 @@ func TestBuildNotifiers(t *testing.T) {
 			name: "ok build args",
 			args: args{
 				cr: &vmv1beta1.VMAlert{
-					Spec: vmv1beta1.VMAlertSpec{Notifiers: []vmv1beta1.VMAlertNotifierSpec{
-						{
-							URL: "http://am-1",
-						},
-						{
-							URL: "http://am-2",
-							HTTPAuth: vmv1beta1.HTTPAuth{
-								TLSConfig: &vmv1beta1.TLSConfig{
-									CAFile:             "/tmp/ca.cert",
-									InsecureSkipVerify: true,
-									KeyFile:            "/tmp/key.pem",
-									CertFile:           "/tmp/cert.pem",
+					Spec: vmv1beta1.VMAlertSpec{
+						Notifiers: []vmv1beta1.VMAlertNotifierSpec{
+							{
+								URL: "http://am-1",
+							},
+							{
+								URL: "http://am-2",
+								HTTPAuth: vmv1beta1.HTTPAuth{
+									TLSConfig: &vmv1beta1.TLSConfig{
+										CAFile:             "/tmp/ca.cert",
+										InsecureSkipVerify: true,
+										KeyFile:            "/tmp/key.pem",
+										CertFile:           "/tmp/cert.pem",
+									},
 								},
 							},
+							{
+								URL: "http://am-3",
+							},
 						},
-						{
-							URL: "http://am-3",
-						},
-					}},
+					},
 				},
 			},
 			want: []string{"-notifier.url=http://am-1,http://am-2,http://am-3", "-notifier.tlsKeyFile=,/tmp/key.pem,", "-notifier.tlsCertFile=,/tmp/cert.pem,", "-notifier.tlsCAFile=,/tmp/ca.cert,", "-notifier.tlsInsecureSkipVerify=false,true,false"},
